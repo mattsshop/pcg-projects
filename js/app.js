@@ -1,8 +1,8 @@
 // PCG Projects — main app (signed-in team members).
-import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.5.0';
-import * as api from './api.js?v=0.5.0';
-import { esc, renderRoom, fileUrl } from './roomview.js?v=0.5.0';
-import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToPngFile, shareOrDownload } from './labels.js?v=0.5.0';
+import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.5.1';
+import * as api from './api.js?v=0.5.1';
+import { esc, renderRoom, fileUrl } from './roomview.js?v=0.5.1';
+import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToJpegFile, CAN_SHARE_PDF, CAN_SHARE_JPG, IS_IOS } from './labels.js?v=0.5.1';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -298,7 +298,7 @@ async function viewRoom(pid, rid) {
   refreshPreview();
   $('#save').onclick = (e) => busy(e.target, async () => { Object.assign(r, readRoomFields(sh.el)); await api.saveRoom(pid, r); toast('Saved'); viewRoom(pid, rid); });
   $('#del').onclick = (e) => { if (confirm(`Delete room ${r.number}? Its QR label will stop working.`)) busy(e.target, async () => { await api.deleteRoom(pid, r); location.hash = `#/p/${pid}/rooms`; }); };
-  $('#pho').onclick = () => phomemoDialog([roomLabel(r, sh.p, types)], true);
+  $('#pho').onclick = () => phomemoDialog([roomLabel(r, sh.p, types, floors)], true);
   $('#copy').onclick = async () => { await navigator.clipboard.writeText(url); toast('Link copied'); };
   $('#regen').onclick = (e) => { if (confirm('Issue a new QR code? The current label for this room will stop working and you will need to print a new one.')) busy(e.target, async () => { await api.regenerateToken(pid, r); toast('New QR issued'); viewRoom(pid, rid); }); };
 }
@@ -513,55 +513,67 @@ function roomPicker(text) {
   });
 }
 function phomemoDialog(labs, single = false) {
-  const pref = prefGet('label', { key: '50x30', w: 50, h: 30, fmt: 'pdf' });
-  const m = modal(`<h3>Print on Phomemo label printer</h3>
-    <p class="small muted">Makes labels sized for your roll, then opens your phone's Share menu — pick the <b>Phomemo</b> app (Print Master). On a computer it downloads the file instead. Works on Android and iPhone.</p>
+  const pref = prefGet('label2', { key: '50x80', w: 50, h: 80, fmt: 'pdf' });
+  const m = modal(`<h3>Label printer (Phomemo / Print Master)</h3>
     <label class="f"><span>Label size (match the roll in your printer)</span><select id="ls">${LABEL_SIZES.map((z) => `<option value="${z.key}" ${z.key === pref.key ? 'selected' : ''}>${esc(z.name)}</option>`).join('')}</select></label>
     <div class="row" id="custom" ${pref.key === 'custom' ? '' : 'hidden'}><label class="f grow"><span>Width (mm)</span><input id="lw" type="number" value="${pref.w}"></label><label class="f grow"><span>Height (mm)</span><input id="lh" type="number" value="${pref.h}"></label></div>
     ${single ? '' : `<label class="f"><span>Rooms (blank = all ${labs.length} shown, or e.g. 201-210, 214)</span><input id="lr" placeholder="All"></label>`}
-    <label class="f"><span>Send as</span><select id="lf">
-      <option value="pdf" ${pref.fmt === 'pdf' ? 'selected' : ''}>One PDF, one label per page (best for many labels)</option>
-      <option value="png" ${pref.fmt === 'png' ? 'selected' : ''}>Picture(s) — one image per label</option></select></label>
-    <div style="text-align:center;background:#eef0f3;border-radius:8px;padding:10px"><canvas id="lp" style="max-width:100%;max-height:200px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)"></canvas><div class="small muted" id="lcount"></div></div>
-    <p class="small muted">In the Phomemo app: set the same label size, print at 100% / fit to label. If the QR prints faint, raise print density in the app.</p>
-    <div class="actions"><button id="x">Close</button><button class="primary" id="go">Send to Phomemo</button></div>`);
+    <label class="f"><span>Make</span><select id="lf">
+      <option value="pdf" ${pref.fmt === 'pdf' ? 'selected' : ''}>Label PDF, one label per page (Print Master)</option>
+      <option value="img" ${pref.fmt === 'img' ? 'selected' : ''}>Single label pictures (tap one to share it)</option></select></label>
+    <div style="text-align:center;background:#eef0f3;border-radius:8px;padding:10px"><canvas id="lp" style="max-width:100%;max-height:220px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)"></canvas><div class="small muted" id="lcount"></div></div>
+    <div id="lout"></div>
+    <div class="actions"><button id="x">Close</button><button class="primary" id="go">Build labels</button></div>`);
+  const out = $('#lout', m.el);
   const size = () => {
     const key = $('#ls', m.el).value, z = LABEL_SIZES.find((x) => x.key === key);
     $('#custom', m.el).hidden = key !== 'custom';
-    return key === 'custom' ? { key, w: Math.max(10, +$('#lw', m.el).value || 50), h: Math.max(10, +$('#lh', m.el).value || 30) } : { key, w: z.w, h: z.h };
+    return key === 'custom' ? { key, w: Math.max(10, +$('#lw', m.el).value || 50), h: Math.max(10, +$('#lh', m.el).value || 80) } : { key, w: z.w, h: z.h };
   };
   const chosen = () => (single ? labs : labs.filter((l) => roomPicker($('#lr', m.el).value)(l.number)));
   const preview = () => {
+    out.innerHTML = '';
     const z = size(), list = chosen();
     $('#lcount', m.el).textContent = `${list.length} label${list.length === 1 ? '' : 's'} · ${z.w} × ${z.h} mm`;
     if (!list.length) return;
-    try {
-      const c = renderLabel(list[0], z.w, z.h), pv = $('#lp', m.el);
-      pv.width = c.width; pv.height = c.height; pv.getContext('2d').drawImage(c, 0, 0);
-    } catch (e) { $('#lcount', m.el).textContent = e.message; }
+    try { const c = renderLabel(list[0], z.w, z.h), pv = $('#lp', m.el); pv.width = c.width; pv.height = c.height; pv.getContext('2d').drawImage(c, 0, 0); }
+    catch (e) { $('#lcount', m.el).textContent = e.message; }
   };
-  ['#ls', '#lw', '#lh', '#lr'].forEach((sel) => { const el = $(sel, m.el); if (el) el.oninput = el.onchange = preview; });
+  ['#ls', '#lw', '#lh', '#lr', '#lf'].forEach((sel) => { const el = $(sel, m.el); if (el) el.oninput = el.onchange = preview; });
   preview();
   $('#x', m.el).onclick = m.close;
+  const shareFile = (f) => navigator.share({ files: [f] }).catch((err) => { if (err.name !== 'AbortError') toast('Could not share: ' + err.message, 6000); });
   $('#go', m.el).onclick = (e) => busy(e.target, async () => {
     const z = size(), list = chosen(), fmt = $('#lf', m.el).value;
     if (!list.length) return alert('No rooms match.');
-    prefSet('label', { ...z, fmt });
+    prefSet('label2', { ...z, fmt });
     const canvases = list.map((l) => renderLabel(l, z.w, z.h));
-    let files;
+    const slug = (t) => String(t).replace(/[^\w]+/g, '_');
     if (fmt === 'pdf') {
       const blob = await canvasesToPdf(canvases, z.w, z.h);
-      const nm = single ? `Room-${list[0].number}-label.pdf` : `QR-labels-${list.length}.pdf`;
-      files = [new File([blob], nm, { type: 'application/pdf' })];
+      const name = `QR_labels_${slug(list[0].project || 'project')}_${list.length === 1 ? 'Room_' + slug(list[0].number) : list.length + '_labels'}_${z.w}x${z.h}mm.pdf`;
+      const file = new File([blob], name, { type: 'application/pdf' });
+      const url = URL.createObjectURL(file);
+      out.innerHTML = `<div class="card" style="margin:12px 0 0;background:#f6fbf8">
+        <b>${list.length} label${list.length === 1 ? '' : 's'}</b>, one per page, ${z.w} × ${z.h} mm.<br>
+        <span class="small">${CAN_SHARE_PDF
+          ? (IS_IOS ? 'Tap <b>Share PDF</b> → <b>Save to Files</b>, then in Print Master import it from <b>Files</b> and print. (If Print Master shows in the share menu, you can pick it directly.)'
+                    : 'Tap <b>Share PDF</b> and pick <b>Print Master</b>. If it isn\'t listed, save the PDF, then open it from Print Master.')
+          : 'Download the PDF, then open or import it in your label printer\'s app.'}<br>In Print Master set the same label size and print at 100%.</span>
+        <div class="row" style="margin-top:8px">${CAN_SHARE_PDF ? '<button class="primary" id="shPdf">Share PDF</button>' : ''}
+        <a class="btn ${CAN_SHARE_PDF ? '' : 'primary'}" href="${url}" download="${esc(name)}" target="_blank">${CAN_SHARE_PDF ? 'Open PDF' : 'Download PDF'}</a></div></div>`;
+      if ($('#shPdf', out)) $('#shPdf', out).onclick = () => shareFile(file);
     } else {
-      files = [];
-      for (let i = 0; i < canvases.length; i++) files.push(await canvasToPngFile(canvases[i], `Room-${list[i].number}.png`));
+      const files = [];
+      for (let k = 0; k < canvases.length; k++) files.push(await canvasToJpegFile(canvases[k], `Room_${slug(list[k].number)}.jpg`));
+      const urls = files.map((f) => URL.createObjectURL(f));
+      out.innerHTML = `<p class="small" style="margin:12px 0 6px">${CAN_SHARE_JPG ? 'Tap a label, then pick <b>Print Master</b> (Phomemo) in the share menu and print.' : 'Tap a label to open it, then save it (long-press on a phone) and print it from your label printer\'s app.'}</p>
+        <div class="sheet-thumbs">${files.map((f, k) => `<a href="${urls[k]}" download="${esc(f.name)}" target="_blank" data-k="${k}" class="sheet-thumb" style="text-align:center"><img src="${urls[k]}" alt="" style="height:120px">Room ${esc(list[k].number)}</a>`).join('')}</div>`;
+      if (CAN_SHARE_JPG) $$('[data-k]', out).forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); shareFile(files[+a.dataset.k]); }));
     }
-    const r = await shareOrDownload(files, 'QR labels');
-    if (r === 'downloaded') toast(fmt === 'pdf' ? 'PDF downloaded — open it in the Phomemo app' : 'Images downloaded');
   });
 }
-const roomLabel = (r, project, types) => ({ url: scanUrl(r.token), number: r.number, project: project.name, type: (types.find((t) => t.id === r.typeId) || {}).name || '', mirrored: !!r.mirrored });
+const roomLabel = (r, project, types, floors = []) => ({ url: scanUrl(r.token), number: r.number, project: project.name, type: (types.find((t) => t.id === r.typeId) || {}).name || '', floor: (floors.find((f) => f.id === r.floorId) || {}).name || '', mirrored: !!r.mirrored });
 
 // ---------------- QR labels ----------------
 async function viewLabels(pid, floorFilter = '') {
@@ -573,7 +585,7 @@ async function viewLabels(pid, floorFilter = '') {
     <div class="card no-print"><div class="row">
       <h2 class="grow">QR Labels <span class="muted small">(${shown.length})</span></h2>
       <select id="ff" style="width:auto"><option value="">All floors</option>${floors.map((f) => `<option value="${f.id}" ${f.id === floorFilter ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>
-      <button id="pho" class="primary">Phomemo label printer</button>
+      <button id="pho" class="primary">Label printer (Phomemo)</button>
       <button onclick="window.print()">Print sheet labels</button></div>
       <p class="small muted">Prints 2 across × 5 down, sized for Avery 5163/8163 (2"×4") labels — do a test print on plain paper and hold it behind the label sheet first. Use weatherproof labels if they'll be in the room through drywall and paint.</p>
     </div>
@@ -582,7 +594,7 @@ async function viewLabels(pid, floorFilter = '') {
       <div><div class="lp">${esc(sh.p.name)}</div><div class="ln">${esc(r.number)}</div>
       <div class="lt">${esc(tName(r.typeId))}${r.mirrored ? ' · MIRRORED' : ''}</div><div class="lh">Scan for room layout, electrical, blocking, millwork &amp; FF&amp;E</div></div></div>`).join('')}</div></div>`;
   $('#ff').onchange = (e) => viewLabels(pid, e.target.value);
-  $('#pho').onclick = () => phomemoDialog(shown.map((r) => roomLabel(r, sh.p, types)));
+  $('#pho').onclick = () => phomemoDialog(shown.map((r) => roomLabel(r, sh.p, types, floors)));
 }
 
 // ---------------- settings ----------------
