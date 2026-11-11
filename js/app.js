@@ -1,7 +1,8 @@
 // PCG Projects — main app (signed-in team members).
-import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.4.0';
-import * as api from './api.js?v=0.4.0';
-import { esc, renderRoom, fileUrl } from './roomview.js?v=0.4.0';
+import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.5.0';
+import * as api from './api.js?v=0.5.0';
+import { esc, renderRoom, fileUrl } from './roomview.js?v=0.5.0';
+import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToPngFile, shareOrDownload } from './labels.js?v=0.5.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -286,7 +287,7 @@ async function viewRoom(pid, rid) {
         <div class="qr-box" style="width:170px">${qrSvg(url)}</div>
         <div class="grow">
           <p class="small" style="word-break:break-all"><a href="${esc(url)}" target="_blank">${esc(url)}</a></p>
-          <div class="row"><a class="btn" href="${esc(url)}" target="_blank">Open scan page</a><button id="copy">Copy link</button><button id="regen">Issue new QR code</button></div>
+          <div class="row"><a class="btn" href="${esc(url)}" target="_blank">Open scan page</a><button id="copy">Copy link</button><button id="regen">Issue new QR code</button><button id="pho">Phomemo label</button></div>
           <p class="small muted">Anyone who scans this label can see this room only — nothing else, and they can't change anything. "Issue new QR code" turns the old label off (use it if a label gets copied or misplaced).</p>
         </div>
       </div>
@@ -297,6 +298,7 @@ async function viewRoom(pid, rid) {
   refreshPreview();
   $('#save').onclick = (e) => busy(e.target, async () => { Object.assign(r, readRoomFields(sh.el)); await api.saveRoom(pid, r); toast('Saved'); viewRoom(pid, rid); });
   $('#del').onclick = (e) => { if (confirm(`Delete room ${r.number}? Its QR label will stop working.`)) busy(e.target, async () => { await api.deleteRoom(pid, r); location.hash = `#/p/${pid}/rooms`; }); };
+  $('#pho').onclick = () => phomemoDialog([roomLabel(r, sh.p, types)], true);
   $('#copy').onclick = async () => { await navigator.clipboard.writeText(url); toast('Link copied'); };
   $('#regen').onclick = (e) => { if (confirm('Issue a new QR code? The current label for this room will stop working and you will need to print a new one.')) busy(e.target, async () => { await api.regenerateToken(pid, r); toast('New QR issued'); viewRoom(pid, rid); }); };
 }
@@ -497,6 +499,70 @@ async function viewFloor(pid, fid) {
   drawPins();
 }
 
+// ---------------- Phomemo / thermal label printer ----------------
+const prefGet = (k, d) => { try { return JSON.parse(localStorage.getItem('pcg-' + k)) ?? d; } catch (e) { return d; } };
+const prefSet = (k, v) => { try { localStorage.setItem('pcg-' + k, JSON.stringify(v)); } catch (e) { /* ignore */ } };
+// "201-210, 214" -> test function on room numbers
+function roomPicker(text) {
+  const parts = String(text || '').split(/[,\s]+/).filter(Boolean);
+  if (!parts.length) return () => true;
+  return (num) => parts.some((p) => {
+    const [a, b] = p.split('-').map((x) => x.trim());
+    if (b === undefined) return String(num) === a;
+    const n = parseInt(num, 10); return n >= parseInt(a, 10) && n <= parseInt(b, 10);
+  });
+}
+function phomemoDialog(labs, single = false) {
+  const pref = prefGet('label', { key: '50x30', w: 50, h: 30, fmt: 'pdf' });
+  const m = modal(`<h3>Print on Phomemo label printer</h3>
+    <p class="small muted">Makes labels sized for your roll, then opens your phone's Share menu — pick the <b>Phomemo</b> app (Print Master). On a computer it downloads the file instead. Works on Android and iPhone.</p>
+    <label class="f"><span>Label size (match the roll in your printer)</span><select id="ls">${LABEL_SIZES.map((z) => `<option value="${z.key}" ${z.key === pref.key ? 'selected' : ''}>${esc(z.name)}</option>`).join('')}</select></label>
+    <div class="row" id="custom" ${pref.key === 'custom' ? '' : 'hidden'}><label class="f grow"><span>Width (mm)</span><input id="lw" type="number" value="${pref.w}"></label><label class="f grow"><span>Height (mm)</span><input id="lh" type="number" value="${pref.h}"></label></div>
+    ${single ? '' : `<label class="f"><span>Rooms (blank = all ${labs.length} shown, or e.g. 201-210, 214)</span><input id="lr" placeholder="All"></label>`}
+    <label class="f"><span>Send as</span><select id="lf">
+      <option value="pdf" ${pref.fmt === 'pdf' ? 'selected' : ''}>One PDF, one label per page (best for many labels)</option>
+      <option value="png" ${pref.fmt === 'png' ? 'selected' : ''}>Picture(s) — one image per label</option></select></label>
+    <div style="text-align:center;background:#eef0f3;border-radius:8px;padding:10px"><canvas id="lp" style="max-width:100%;max-height:200px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)"></canvas><div class="small muted" id="lcount"></div></div>
+    <p class="small muted">In the Phomemo app: set the same label size, print at 100% / fit to label. If the QR prints faint, raise print density in the app.</p>
+    <div class="actions"><button id="x">Close</button><button class="primary" id="go">Send to Phomemo</button></div>`);
+  const size = () => {
+    const key = $('#ls', m.el).value, z = LABEL_SIZES.find((x) => x.key === key);
+    $('#custom', m.el).hidden = key !== 'custom';
+    return key === 'custom' ? { key, w: Math.max(10, +$('#lw', m.el).value || 50), h: Math.max(10, +$('#lh', m.el).value || 30) } : { key, w: z.w, h: z.h };
+  };
+  const chosen = () => (single ? labs : labs.filter((l) => roomPicker($('#lr', m.el).value)(l.number)));
+  const preview = () => {
+    const z = size(), list = chosen();
+    $('#lcount', m.el).textContent = `${list.length} label${list.length === 1 ? '' : 's'} · ${z.w} × ${z.h} mm`;
+    if (!list.length) return;
+    try {
+      const c = renderLabel(list[0], z.w, z.h), pv = $('#lp', m.el);
+      pv.width = c.width; pv.height = c.height; pv.getContext('2d').drawImage(c, 0, 0);
+    } catch (e) { $('#lcount', m.el).textContent = e.message; }
+  };
+  ['#ls', '#lw', '#lh', '#lr'].forEach((sel) => { const el = $(sel, m.el); if (el) el.oninput = el.onchange = preview; });
+  preview();
+  $('#x', m.el).onclick = m.close;
+  $('#go', m.el).onclick = (e) => busy(e.target, async () => {
+    const z = size(), list = chosen(), fmt = $('#lf', m.el).value;
+    if (!list.length) return alert('No rooms match.');
+    prefSet('label', { ...z, fmt });
+    const canvases = list.map((l) => renderLabel(l, z.w, z.h));
+    let files;
+    if (fmt === 'pdf') {
+      const blob = await canvasesToPdf(canvases, z.w, z.h);
+      const nm = single ? `Room-${list[0].number}-label.pdf` : `QR-labels-${list.length}.pdf`;
+      files = [new File([blob], nm, { type: 'application/pdf' })];
+    } else {
+      files = [];
+      for (let i = 0; i < canvases.length; i++) files.push(await canvasToPngFile(canvases[i], `Room-${list[i].number}.png`));
+    }
+    const r = await shareOrDownload(files, 'QR labels');
+    if (r === 'downloaded') toast(fmt === 'pdf' ? 'PDF downloaded — open it in the Phomemo app' : 'Images downloaded');
+  });
+}
+const roomLabel = (r, project, types) => ({ url: scanUrl(r.token), number: r.number, project: project.name, type: (types.find((t) => t.id === r.typeId) || {}).name || '', mirrored: !!r.mirrored });
+
 // ---------------- QR labels ----------------
 async function viewLabels(pid, floorFilter = '') {
   const sh = await projectShell(pid, 'labels'); if (!sh) return;
@@ -507,7 +573,8 @@ async function viewLabels(pid, floorFilter = '') {
     <div class="card no-print"><div class="row">
       <h2 class="grow">QR Labels <span class="muted small">(${shown.length})</span></h2>
       <select id="ff" style="width:auto"><option value="">All floors</option>${floors.map((f) => `<option value="${f.id}" ${f.id === floorFilter ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>
-      <button class="primary" onclick="window.print()">Print labels</button></div>
+      <button id="pho" class="primary">Phomemo label printer</button>
+      <button onclick="window.print()">Print sheet labels</button></div>
       <p class="small muted">Prints 2 across × 5 down, sized for Avery 5163/8163 (2"×4") labels — do a test print on plain paper and hold it behind the label sheet first. Use weatherproof labels if they'll be in the room through drywall and paint.</p>
     </div>
     <div class="card"><div class="labels">${shown.map((r) => `
@@ -515,6 +582,7 @@ async function viewLabels(pid, floorFilter = '') {
       <div><div class="lp">${esc(sh.p.name)}</div><div class="ln">${esc(r.number)}</div>
       <div class="lt">${esc(tName(r.typeId))}${r.mirrored ? ' · MIRRORED' : ''}</div><div class="lh">Scan for room layout, electrical, blocking, millwork &amp; FF&amp;E</div></div></div>`).join('')}</div></div>`;
   $('#ff').onchange = (e) => viewLabels(pid, e.target.value);
+  $('#pho').onclick = () => phomemoDialog(shown.map((r) => roomLabel(r, sh.p, types)));
 }
 
 // ---------------- settings ----------------

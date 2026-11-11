@@ -3,7 +3,7 @@
 Perimeter Construction Group's app for running hotel projects during construction.
 Hosted on GitHub Pages, backed by Firebase (Auth + Firestore + Storage).
 
-**Current version: v0.4.0** (shown in the footer of every page)
+**Current version: v0.5.0** (shown in the footer of every page)
 
 ## Module 1 — Rooms & QR codes
 
@@ -68,6 +68,8 @@ scans/{token}                       public copy of one room for the QR scan page
 ```
 
 ## Versions
+
+- **0.5.0** – Phomemo / thermal label printing: QR Labels → *Phomemo label printer* and Room → *Phomemo label*. Pick roll size (50×30, 40×30, 40×40, custom…), room range, PDF or pictures; sends to the Phomemo app via the phone's Share menu (Android & iPhone) or downloads on a computer. Labels are pure black/white at 203 dpi.
 
 - **0.4.0** – Connected to Firebase project `pcg-projects` (demo mode off).
 

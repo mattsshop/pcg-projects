@@ -1,6 +1,6 @@
 // PCG Projects — configuration
 // Bump APP_VERSION on every change so you can tell which build is live.
-export const APP_VERSION = '0.4.0';
+export const APP_VERSION = '0.5.0';
 
 // Paste the config from Firebase console → Project settings → Your apps → Web app.
 // (Web app config values are public by design — the security rules protect the data.)
