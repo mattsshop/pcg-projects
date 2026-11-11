@@ -1,0 +1,154 @@
+// Data layer used by the app. Picks the demo or Firebase backend and adds project/room logic.
+import { DEMO, TABS } from './config.js';
+
+let be = null;
+
+export async function initBackend(opts = {}) {
+  if (be) return be;
+  const mod = DEMO ? await import('./backend-demo.js') : await import('./backend-firebase.js');
+  be = await mod.createBackend(opts);
+  return be;
+}
+export const backend = () => be;
+
+export function randomToken(n = 10) {
+  // Unambiguous characters (no 0/O/1/l/I) so a token can be read off a label if needed.
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const b = crypto.getRandomValues(new Uint8Array(n));
+  return Array.from(b, (x) => a[x % a.length]).join('');
+}
+
+const byNum = (a, b) => String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+
+// ---------- users ----------
+export async function ensureProfile(u) {
+  const p = await be.get(`users/${u.uid}`);
+  if (p) return p;
+  const prof = { email: u.email || '', name: u.name || '', approved: false, role: 'member', createdAt: Date.now() };
+  await be.set(`users/${u.uid}`, prof, false);
+  return { id: u.uid, ...prof };
+}
+export const listUsers = () => be.list('users');
+export const updateUser = (uid, patch) => be.set(`users/${uid}`, patch);
+
+// ---------- projects ----------
+export async function listProjects() {
+  return (await be.list('projects')).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+export const getProject = (pid) => be.get(`projects/${pid}`);
+export async function saveProject(p) {
+  const { id, ...data } = p;
+  if (id) {
+    await be.set(`projects/${id}`, data);
+    if ('name' in data) await republish(id);
+    return id;
+  }
+  return be.add('projects', { ...data, createdAt: Date.now() });
+}
+
+// ---------- floors ----------
+export async function listFloors(pid) {
+  return (await be.list(`projects/${pid}/floors`)).sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+export async function saveFloor(pid, f) {
+  const { id, ...data } = f;
+  if (id) {
+    await be.set(`projects/${pid}/floors/${id}`, data);
+    if ('name' in data) await republish(pid, (r) => r.floorId === id);
+    return id;
+  }
+  return be.add(`projects/${pid}/floors`, data);
+}
+export async function deleteFloor(pid, fid) {
+  const pins = await be.list(`projects/${pid}/floors/${fid}/pins`);
+  for (const p of pins) await be.remove(`projects/${pid}/floors/${fid}/pins/${p.id}`);
+  await be.remove(`projects/${pid}/floors/${fid}`);
+}
+
+// ---------- pins on floor layouts ----------
+export const listPins = (pid, fid) => be.list(`projects/${pid}/floors/${fid}/pins`);
+export async function savePin(pid, fid, pin) {
+  const { id, ...data } = pin;
+  if (id) { await be.set(`projects/${pid}/floors/${fid}/pins/${id}`, data); return id; }
+  return be.add(`projects/${pid}/floors/${fid}/pins`, data);
+}
+export const deletePin = (pid, fid, id) => be.remove(`projects/${pid}/floors/${fid}/pins/${id}`);
+
+// ---------- room types ----------
+export async function listTypes(pid) {
+  return (await be.list(`projects/${pid}/types`)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+export async function saveType(pid, t) {
+  const { id, ...data } = t;
+  let tid = id;
+  if (id) await be.set(`projects/${pid}/types/${id}`, data);
+  else tid = await be.add(`projects/${pid}/types`, data);
+  await republish(pid, (r) => r.typeId === tid);
+  return tid;
+}
+export async function deleteType(pid, tid) {
+  await be.remove(`projects/${pid}/types/${tid}`);
+  const rooms = await listRooms(pid);
+  for (const r of rooms.filter((x) => x.typeId === tid)) await saveRoom(pid, { ...r, typeId: '' });
+}
+
+// ---------- rooms ----------
+export async function listRooms(pid) {
+  return (await be.list(`projects/${pid}/rooms`)).sort(byNum);
+}
+export const getRoom = (pid, rid) => be.get(`projects/${pid}/rooms/${rid}`);
+
+export async function saveRoom(pid, r) {
+  const { id, ...data } = r;
+  if (!data.token) data.token = randomToken();
+  if (!data.sheets) data.sheets = [];
+  let roomId = id;
+  if (id) await be.set(`projects/${pid}/rooms/${id}`, data, false);
+  else roomId = await be.add(`projects/${pid}/rooms`, data);
+  await publishRoom(pid, { id: roomId, ...data });
+  return roomId;
+}
+export async function deleteRoom(pid, r) {
+  if (r.token) await be.remove(`scans/${r.token}`);
+  await be.remove(`projects/${pid}/rooms/${r.id}`);
+}
+// New QR code for a room: the old label stops working.
+export async function regenerateToken(pid, r) {
+  if (r.token) await be.remove(`scans/${r.token}`);
+  const token = randomToken();
+  await saveRoom(pid, { ...r, token });
+  return token;
+}
+
+// ---------- public scan pages ----------
+// Each room is copied to scans/{token}: the only thing someone without an account can read.
+async function buildScan(pid, r, cache = {}) {
+  const project = cache.project || (await getProject(pid));
+  const type = r.typeId ? (cache.types ? cache.types.find((t) => t.id === r.typeId) : await be.get(`projects/${pid}/types/${r.typeId}`)) : null;
+  const floor = r.floorId ? (cache.floors ? cache.floors.find((f) => f.id === r.floorId) : await be.get(`projects/${pid}/floors/${r.floorId}`)) : null;
+  const order = (tab) => { const i = TABS.findIndex((t) => t.key === tab); return i < 0 ? 99 : i; };
+  const sheets = [...((type && type.sheets) || []).map((s) => ({ ...s, source: 'type' })), ...(r.sheets || []).map((s) => ({ ...s, source: 'room' }))]
+    .sort((a, b) => order(a.tab) - order(b.tab))
+    .map(({ tab, label, url, source }) => ({ tab, label: label || '', url, source }));
+  return {
+    projectId: pid, roomId: r.id,
+    projectName: project ? project.name : '',
+    roomNumber: r.number, floorName: floor ? floor.name : '',
+    typeName: type ? type.name : '', mirrored: !!r.mirrored,
+    notes: r.notes || '', sheets, updatedAt: Date.now()
+  };
+}
+export async function publishRoom(pid, r, cache) {
+  if (!r.token) return;
+  await be.set(`scans/${r.token}`, await buildScan(pid, r, cache), false);
+}
+export async function republish(pid, filter = () => true) {
+  const [project, types, floors, rooms] = await Promise.all([getProject(pid), listTypes(pid), listFloors(pid), listRooms(pid)]);
+  const cache = { project, types, floors };
+  for (const r of rooms.filter(filter)) await publishRoom(pid, r, cache);
+}
+export const getScan = (token) => be.get(`scans/${token}`);
+
+// ---------- files ----------
+export function upload(path, file) { return be.upload(path, file); }
+export function deleteFile(path) { return be.deleteFile(path); }

@@ -1,0 +1,18 @@
+rules_version = '2';
+// PCG Projects — Storage security rules
+// Paste into Firebase console → Storage → Rules → Publish.
+// Scan pages show images through their download links (which carry their own access token),
+// so people scanning a QR code can see that room's sheets without being able to browse storage.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function approved() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.approved == true;
+    }
+    match /{allPaths=**} {
+      allow read: if approved();
+      allow write: if approved() && (request.resource == null || request.resource.size < 30 * 1024 * 1024);
+    }
+  }
+}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Room — PCG Projects</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="scan">
+<header class="top"><div class="brand">PCG <b>Projects</b></div></header>
+<main id="room" class="wrap"><p class="pad muted">Loading room…</p></main>
+<footer class="foot">Perimeter Construction Group · <span id="ver"></span> · <a id="team" href="index.html">Team sign-in</a></footer>
+<script type="module">
+import { APP_VERSION, DEMO } from './js/config.js';
+import { initBackend, getScan } from './js/api.js';
+import { renderRoom } from './js/roomview.js';
+
+document.getElementById('ver').textContent = 'v' + APP_VERSION + (DEMO ? ' DEMO' : '');
+const el = document.getElementById('room');
+const token = new URLSearchParams(location.search).get('t');
+try {
+  if (!token) throw new Error('none');
+  await initBackend({ withAuth: false });
+  const scan = await getScan(token);
+  if (!scan) {
+    el.innerHTML = '<div class="pad"><h2>Label not found</h2><p>This QR code is no longer active. It may have been replaced with a new label. Check with the PCG superintendent.</p></div>';
+  } else {
+    document.title = `Room ${scan.roomNumber} — ${scan.projectName}`;
+    document.getElementById('team').href = `index.html#/p/${scan.projectId}/room/${scan.roomId}`;
+    renderRoom(el, scan);
+  }
+} catch (e) {
+  console.error(e);
+  el.innerHTML = '<div class="pad"><h2>Could not load this room</h2><p>Check your signal and try scanning again.</p></div>';
+}
+</script>
+</body>
+</html>

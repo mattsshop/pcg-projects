@@ -1,0 +1,42 @@
+rules_version = '2';
+// PCG Projects — Firestore security rules
+// Paste into Firebase console → Firestore Database → Rules → Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function approved() { return signedIn() && exists(me()) && get(me()).data.approved == true; }
+    function admin() { return approved() && get(me()).data.role == 'admin'; }
+
+    // Team accounts. New sign-ups create their own record as unapproved members;
+    // only an admin can approve or change roles.
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || approved());
+      allow list: if admin();
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.approved == false
+        && request.resource.data.role == 'member';
+      allow update: if admin()
+        || (signedIn() && request.auth.uid == uid
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approved', 'role']));
+      allow delete: if admin();
+    }
+
+    // Everything about a project: approved team members only.
+    match /projects/{pid} {
+      allow read, write: if approved();
+      match /{rest=**} {
+        allow read, write: if approved();
+      }
+    }
+
+    // Public scan pages. Anyone with the exact QR token can read that ONE room.
+    // Nobody can list them, and only approved team members can write them.
+    match /scans/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update, delete: if approved();
+    }
+  }
+}
