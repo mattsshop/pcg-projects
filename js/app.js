@@ -1,7 +1,7 @@
 // PCG Projects — main app (signed-in team members).
-import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.3.1';
-import * as api from './api.js?v=0.3.1';
-import { esc, renderRoom, fileUrl } from './roomview.js?v=0.3.1';
+import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.4.0';
+import * as api from './api.js?v=0.4.0';
+import { esc, renderRoom, fileUrl } from './roomview.js?v=0.4.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));

@@ -1,17 +1,17 @@
 // PCG Projects — configuration
 // Bump APP_VERSION on every change so you can tell which build is live.
-export const APP_VERSION = '0.3.1';
+export const APP_VERSION = '0.4.0';
 
 // Paste the config from Firebase console → Project settings → Your apps → Web app.
-// While apiKey still says "PASTE_...", the app runs in DEMO MODE
-// (sample data, saved only in this browser).
+// (Web app config values are public by design — the security rules protect the data.)
+// Set apiKey back to 'PASTE_API_KEY' to run in DEMO MODE.
 export const firebaseConfig = {
-  apiKey: 'PASTE_API_KEY',
-  authDomain: 'PASTE.firebaseapp.com',
-  projectId: 'PASTE',
-  storageBucket: 'PASTE.appspot.com',
-  messagingSenderId: '',
-  appId: ''
+  apiKey: 'AIzaSyBSqgnFIF3bPR6P5B3yfWpbOox4Rl1vnHA',
+  authDomain: 'pcg-projects.firebaseapp.com',
+  projectId: 'pcg-projects',
+  storageBucket: 'pcg-projects.firebasestorage.app',
+  messagingSenderId: '739298357320',
+  appId: '1:739298357320:web:40af18682ced241ea3e87d'
 };
 
 export const DEMO = String(firebaseConfig.apiKey).startsWith('PASTE');

@@ -3,7 +3,7 @@
 Perimeter Construction Group's app for running hotel projects during construction.
 Hosted on GitHub Pages, backed by Firebase (Auth + Firestore + Storage).
 
-**Current version: v0.3.1** (shown in the footer of every page)
+**Current version: v0.4.0** (shown in the footer of every page)
 
 ## Module 1 — Rooms & QR codes
 
@@ -68,6 +68,8 @@ scans/{token}                       public copy of one room for the QR scan page
 ```
 
 ## Versions
+
+- **0.4.0** – Connected to Firebase project `pcg-projects` (demo mode off).
 
 - **0.3.1** – Version shown at the top of every page; app detects a newer build and offers to load it (cache-busted module URLs via `tools/bump.py`); Delete button on project tiles for admins.
 
