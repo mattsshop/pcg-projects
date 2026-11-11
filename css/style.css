@@ -16,6 +16,12 @@ h1 { font-size: 1.5rem; } h2 { font-size: 1.25rem; } h3 { font-size: 1.05rem; }
 .top { background: var(--navy); color: #fff; display: flex; align-items: center; gap: 12px; padding: 10px 16px; position: sticky; top: 0; z-index: 20; }
 .brand { font-size: 1.1rem; letter-spacing: .5px; } .brand b { color: var(--accent); }
 .top .sp { flex: 1; }
+.ver-badge { font-size: .72rem; background: rgba(255,255,255,.15); color: #fff; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.update-bar { background: #e3f4ea; color: #145c33; text-align: center; padding: 8px; font-size: .9rem; border-bottom: 1px solid #b9e2c8; }
+.update-bar button { margin-left: 8px; padding: 4px 10px; }
+.tile-wrap { position: relative; }
+.tile-wrap .tile { padding-right: 74px; height: 100%; }
+.tile-del { position: absolute; top: 8px; right: 8px; font-size: .78rem; color: var(--bad); background: #fff; border: 1px solid #f0c2bd; border-radius: 6px; padding: 2px 8px; cursor: pointer; }
 .top a, .top button.link { color: #fff; text-decoration: none; opacity: .9; }
 .crumbs { font-size: .9rem; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crumbs a { color: #fff; }

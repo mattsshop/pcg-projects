@@ -1,5 +1,5 @@
 // Firebase backend (Auth + Firestore + Storage), loaded from the official CDN.
-import { firebaseConfig } from './config.js';
+import { firebaseConfig } from './config.js?v=0.3.1';
 
 const V = '10.12.2';
 const base = `https://www.gstatic.com/firebasejs/${V}`;

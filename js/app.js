@@ -1,7 +1,7 @@
 // PCG Projects — main app (signed-in team members).
-import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js';
-import * as api from './api.js';
-import { esc, renderRoom, fileUrl } from './roomview.js';
+import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.3.1';
+import * as api from './api.js?v=0.3.1';
+import { esc, renderRoom, fileUrl } from './roomview.js?v=0.3.1';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -128,6 +128,23 @@ function viewPending() {
   $('#re').onclick = () => location.reload();
 }
 
+// ---------------- delete project ----------------
+function confirmDeleteProject(p, after) {
+  const m = modal(`<h3 style="color:var(--bad)">Delete ${esc(p.name)}?</h3>
+    <p>This permanently deletes every room, room type, floor layout, pin, photo and drawing in this project, and turns off all of its QR labels. It can't be undone.</p>
+    <label class="f"><span>Type the project name to confirm: <b>${esc(p.name)}</b></span><input id="cn" autocomplete="off"></label>
+    <div id="dmsg" class="small" style="min-height:1.4em"></div>
+    <div class="actions"><button id="x">Cancel</button><button class="danger" id="ok" disabled>Delete forever</button></div>`);
+  const cn = $('#cn', m.el), ok = $('#ok', m.el);
+  cn.oninput = () => { ok.disabled = cn.value.trim().toLowerCase() !== String(p.name).trim().toLowerCase(); };
+  cn.focus();
+  $('#x', m.el).onclick = m.close;
+  ok.onclick = () => busy(ok, async () => {
+    await api.deleteProject(p.id, (t) => ($('#dmsg', m.el).textContent = t));
+    m.close(); toast('Project deleted'); after();
+  });
+}
+
 // ---------------- projects ----------------
 async function viewProjects() {
   crumbs([]);
@@ -135,10 +152,11 @@ async function viewProjects() {
   app.innerHTML = `
     <div class="card">
       <div class="row"><h2 class="grow">Projects</h2><button id="impP">New from plan package</button><button class="primary" id="newP">+ New project</button></div>
-      <div class="grid">${projects.map((p) => `<a class="tile" href="#/p/${p.id}"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.code || '')}</div></a>`).join('') || '<p class="muted">No projects yet.</p>'}</div>
+      <div class="grid">${projects.map((p) => `<div class="tile-wrap"><a class="tile" href="#/p/${p.id}"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.code || '')}&nbsp;</div></a>${isAdmin() ? `<button class="tile-del" data-delp="${p.id}" title="Delete project">Delete</button>` : ''}</div>`).join('') || '<p class="muted">No projects yet.</p>'}</div>
     </div>`;
   $('#newP').onclick = () => editProject();
   $('#impP').onclick = () => importDialog(null);
+  $$('[data-delp]').forEach((b) => (b.onclick = () => confirmDeleteProject(projects.find((p) => p.id === b.dataset.delp), () => viewProjects())));
 }
 function editProject(p = {}) {
   const m = modal(`<h3>${p.id ? 'Project settings' : 'New project'}</h3>
@@ -509,20 +527,8 @@ async function viewSettings(pid) {
     <div class="card"><h3>Scan pages</h3><p class="small muted">Scan pages update automatically when you change rooms, types or floors. Use this only if something looks out of date.</p><button id="rp">Refresh all scan pages</button></div>`;
   $('#ed').onclick = () => editProject(sh.p);
   $('#imp').onclick = () => importDialog(pid);
-  if ($('#delP')) $('#delP').onclick = () => {
-    const m = modal(`<h3 style="color:var(--bad)">Delete ${esc(sh.p.name)}?</h3>
-      <p>This permanently deletes every room, room type, floor layout, pin, photo and drawing in this project, and turns off all of its QR labels.</p>
-      <label class="f"><span>Type the project name to confirm: <b>${esc(sh.p.name)}</b></span><input id="cn" autocomplete="off"></label>
-      <div id="dmsg" class="small" style="min-height:1.4em"></div>
-      <div class="actions"><button id="x">Cancel</button><button class="danger" id="ok" disabled>Delete forever</button></div>`);
-    const cn = $('#cn', m.el), ok = $('#ok', m.el);
-    cn.oninput = () => { ok.disabled = cn.value.trim() !== sh.p.name.trim(); };
-    $('#x', m.el).onclick = m.close;
-    ok.onclick = () => busy(ok, async () => {
-      await api.deleteProject(pid, (t) => ($('#dmsg', m.el).textContent = t));
-      m.close(); toast('Project deleted'); location.hash = '#/'; route();
-    });
-  };
+  if ($('#delP')) $('#delP').onclick = () => confirmDeleteProject(sh.p, () => { location.hash = '#/'; route(); });
+
   $('#rp').onclick = (e) => busy(e.target, async () => { await api.republish(pid); toast('All scan pages refreshed'); });
 }
 
@@ -567,9 +573,27 @@ async function route() {
   }
 }
 
+// ---------------- new-build check ----------------
+// GitHub Pages lets browsers keep files for a while; this spots a newer build and loads it.
+async function checkForUpdate() {
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const { version } = await r.json();
+    if (version && version !== APP_VERSION) {
+      $('#update').hidden = false;
+      $('#update').firstChild.textContent = `Version ${version} is available (you have ${APP_VERSION}). `;
+      $('#updBtn').onclick = () => location.replace(location.pathname + '?v=' + version + location.hash);
+    }
+  } catch (e) { /* offline — ignore */ }
+}
+
 // ---------------- start ----------------
 (async function start() {
   $('#ver').textContent = 'v' + APP_VERSION + (DEMO ? ' (demo)' : '');
+  $('#verTop').textContent = 'v' + APP_VERSION + (DEMO ? ' demo' : '');
+  checkForUpdate();
+  setInterval(checkForUpdate, 5 * 60 * 1000);
   if (DEMO) $('#demo').hidden = false;
   const be = await api.initBackend();
   if (be.demo && be.takeNeedsPublish()) {

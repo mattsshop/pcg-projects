@@ -3,7 +3,7 @@
 Perimeter Construction Group's app for running hotel projects during construction.
 Hosted on GitHub Pages, backed by Firebase (Auth + Firestore + Storage).
 
-**Current version: v0.3.0** (shown in the footer of every page)
+**Current version: v0.3.1** (shown in the footer of every page)
 
 ## Module 1 — Rooms & QR codes
 
@@ -51,6 +51,10 @@ saved only in your browser (IndexedDB, so imported plan packages fit). "Sign out
 
 Settings → Pages → Deploy from branch → `main` / root. Site: `https://mattsshop.github.io/pcg-projects/`
 
+## Releasing a new version
+
+Run `python3 tools/bump.py X.Y.Z` — updates `js/config.js`, `version.json` and stamps `?v=X.Y.Z` on every module import so browsers fetch the new build.
+
 ## Data layout
 
 ```
@@ -64,6 +68,8 @@ scans/{token}                       public copy of one room for the QR scan page
 ```
 
 ## Versions
+
+- **0.3.1** – Version shown at the top of every page; app detects a newer build and offers to load it (cache-busted module URLs via `tools/bump.py`); Delete button on project tiles for admins.
 
 - **0.3.0** – Admins can delete a project (Settings → Delete project, type the name to confirm). Removes rooms, scan pages (QR labels stop working), types, floors, pins and uploaded files. Updated `firestore.rules`: only admins can delete the project record.
 
