@@ -1,6 +1,9 @@
 // Renders a room's scan page (used by r.html and the in-app preview).
 import { TABS } from './config.js';
 
+// Demo mode stores files locally; this turns their references into viewable URLs.
+export const fileUrl = (u) => (window.__resolveUrl ? window.__resolveUrl(u) : u);
+
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export function renderRoom(el, scan, { appLink = '' } = {}) {
@@ -28,7 +31,7 @@ export function renderRoom(el, scan, { appLink = '' } = {}) {
         ${sheets.map((s) => `
           <figure class="rv-sheet">
             ${s.label ? `<figcaption>${esc(s.label)}</figcaption>` : ''}
-            <a href="${esc(s.url)}" target="_blank" rel="noopener"><img src="${esc(s.url)}" alt="${esc(s.label)}" class="${flip && s.source === 'type' ? 'flipped' : ''}" loading="lazy"></a>
+            <a href="${esc(fileUrl(s.url))}" target="_blank" rel="noopener"><img src="${esc(fileUrl(s.url))}" alt="${esc(s.label)}" class="${flip && s.source === 'type' ? 'flipped' : ''}" loading="lazy"></a>
             <div class="muted small">Tap the drawing to open it full size and zoom.</div>
           </figure>`).join('')}
       </div>

@@ -128,7 +128,7 @@ async function buildScan(pid, r, cache = {}) {
   const floor = r.floorId ? (cache.floors ? cache.floors.find((f) => f.id === r.floorId) : await be.get(`projects/${pid}/floors/${r.floorId}`)) : null;
   const order = (tab) => { const i = TABS.findIndex((t) => t.key === tab); return i < 0 ? 99 : i; };
   const sheets = [...((type && type.sheets) || []).map((s) => ({ ...s, source: 'type' })), ...(r.sheets || []).map((s) => ({ ...s, source: 'room' }))]
-    .sort((a, b) => order(a.tab) - order(b.tab))
+    .sort((a, b) => order(a.tab) - order(b.tab) || (a.source === 'room' ? -1 : 0) - (b.source === 'room' ? -1 : 0))
     .map(({ tab, label, url, source }) => ({ tab, label: label || '', url, source }));
   return {
     projectId: pid, roomId: r.id,
@@ -152,3 +152,66 @@ export const getScan = (token) => be.get(`scans/${token}`);
 // ---------- files ----------
 export function upload(path, file) { return be.upload(path, file); }
 export function deleteFile(path) { return be.deleteFile(path); }
+
+// ---------- plan package import ----------
+// pkg = { manifest, file(name) -> Promise<Blob> }. Matches existing floors/types by name and rooms by number,
+// so re-importing an updated package updates in place and keeps every room's QR code.
+export async function importPackage(pid, pkg, progress = () => {}) {
+  const m = pkg.manifest;
+  if (!m || m.format !== 'pcg-projects-package') throw new Error('This is not a PCG Projects plan package (manifest.json missing or wrong).');
+  const uploaded = {};
+  const names = new Set();
+  m.floors.forEach((f) => f.plan && names.add(f.plan));
+  m.types.forEach((t) => t.sheets.forEach((s) => names.add(s.file)));
+  m.rooms.forEach((r) => (r.sheets || []).forEach((s) => names.add(s.file)));
+  let done = 0;
+  const stamp = Date.now();
+  for (const name of names) {
+    progress(`Uploading drawings ${++done} of ${names.size}…`);
+    const blob = await pkg.file(name);
+    if (!blob) throw new Error('Missing file in package: ' + name);
+    const file = new File([blob], name.split('/').pop(), { type: 'image/jpeg' });
+    uploaded[name] = await be.upload(`projects/${pid}/package/${stamp}/${name}`, file);
+  }
+  const sheetsOf = (list) => (list || []).map((s) => ({ id: randomToken(8), tab: s.tab, label: s.label || '', url: uploaded[s.file].url, path: uploaded[s.file].path }));
+
+  progress('Saving floors…');
+  const floors = await listFloors(pid);
+  const floorId = {};
+  for (const f of m.floors) {
+    const ex = floors.find((x) => (x.name || '').toLowerCase() === f.name.toLowerCase());
+    const data = { name: f.name, order: f.order, plan: f.plan ? { ...uploaded[f.plan], label: f.label || '' } : (ex && ex.plan) || null };
+    if (ex) { await be.set(`projects/${pid}/floors/${ex.id}`, data); floorId[f.key] = ex.id; }
+    else floorId[f.key] = await be.add(`projects/${pid}/floors`, data);
+  }
+
+  progress('Saving room types…');
+  const types = await listTypes(pid);
+  const typeId = {};
+  for (const t of m.types) {
+    const ex = types.find((x) => (x.name || '').toLowerCase() === t.name.toLowerCase());
+    const data = { name: t.name, sheets: sheetsOf(t.sheets) };
+    if (ex) { await be.set(`projects/${pid}/types/${ex.id}`, data); typeId[t.key] = ex.id; }
+    else typeId[t.key] = await be.add(`projects/${pid}/types`, data);
+  }
+
+  const rooms = await listRooms(pid);
+  let i = 0;
+  for (const r of m.rooms) {
+    progress(`Saving rooms ${++i} of ${m.rooms.length}…`);
+    const ex = rooms.find((x) => String(x.number) === String(r.number));
+    const data = {
+      number: String(r.number), floorId: floorId[r.floor] || '', typeId: typeId[r.type] || '',
+      mirrored: ex ? !!ex.mirrored : !!r.mirrored,            // keep a hand you already set
+      notes: ex && ex.notes ? ex.notes : (r.notes || ''),     // keep notes you already wrote
+      planX: r.planX ?? null, planY: r.planY ?? null,
+      sheets: [...sheetsOf(r.sheets), ...((ex && ex.sheets) || []).filter((s) => !s.fromPackage)].map((s, k) => (k < (r.sheets || []).length ? { ...s, fromPackage: true } : s)),
+      token: ex && ex.token ? ex.token : randomToken()
+    };
+    if (ex) await be.set(`projects/${pid}/rooms/${ex.id}`, data, false);
+    else await be.add(`projects/${pid}/rooms`, data);
+  }
+  progress('Publishing scan pages…');
+  await republish(pid);
+  return { floors: m.floors.length, types: m.types.length, rooms: m.rooms.length, files: names.size };
+}

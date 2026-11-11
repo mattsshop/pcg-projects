@@ -1,7 +1,7 @@
 // PCG Projects — main app (signed-in team members).
 import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js';
 import * as api from './api.js';
-import { esc, renderRoom } from './roomview.js';
+import { esc, renderRoom, fileUrl } from './roomview.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -54,6 +54,51 @@ async function shrinkImage(file, max = 1800) {
 }
 const fileKey = (name) => `${Date.now()}-${api.randomToken(6)}-${name.replace(/[^\w.-]+/g, '_')}`;
 
+// ---------------- plan package import ----------------
+function loadJSZip() {
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  return new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'js/vendor/jszip.min.js'; sc.onload = () => res(window.JSZip); sc.onerror = () => rej(new Error('Could not load zip reader')); document.head.appendChild(sc); });
+}
+// Accepts a .zip, or every file from the unzipped folder.
+async function readPackage(files) {
+  files = Array.from(files);
+  if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
+    const JSZip = await loadJSZip();
+    const zip = await JSZip.loadAsync(files[0]);
+    const entry = (name) => zip.file(name) || zip.file(new RegExp('(^|/)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'))[0];
+    const mf = entry('manifest.json');
+    if (!mf) throw new Error('manifest.json not found in the zip');
+    return { manifest: JSON.parse(await mf.async('string')), file: async (n) => { const e = entry(n); return e ? e.async('blob') : null; } };
+  }
+  const map = {};
+  files.forEach((f) => { const rel = (f.webkitRelativePath || f.name).split('/'); if (rel.length > 1) rel.shift(); map[rel.join('/')] = f; });
+  const mf = map['manifest.json'];
+  if (!mf) throw new Error('manifest.json not found — pick the package .zip, or the whole unzipped folder.');
+  return { manifest: JSON.parse(await mf.text()), file: async (n) => map[n] || null };
+}
+function importDialog(pid) {
+  const m = modal(`<h3>Import plan package</h3>
+    <p class="small muted">Loads room types with their sheets, every room, floor plans, and each room's spot on its floor plan. Re-importing an updated package updates in place: QR codes, hands and notes you set are kept.</p>
+    <label class="f"><span>Package .zip</span><input id="pz" type="file" accept=".zip"></label>
+    <label class="f"><span>…or the unzipped package folder</span><input id="pf" type="file" webkitdirectory multiple></label>
+    <div id="pmsg" class="small" style="min-height:1.4em"></div>
+    <div class="actions"><button id="x">Close</button><button class="primary" id="ok">Import</button></div>`);
+  $('#x', m.el).onclick = m.close;
+  $('#ok', m.el).onclick = (e) => busy(e.target, async () => {
+    const files = $('#pz', m.el).files.length ? $('#pz', m.el).files : $('#pf', m.el).files;
+    if (!files.length) return alert('Choose the package first.');
+    const msg = $('#pmsg', m.el);
+    msg.textContent = 'Reading package…';
+    const pkg = await readPackage(files);
+    let target = pid;
+    if (!target) target = await api.saveProject({ name: pkg.manifest.project.name, code: pkg.manifest.project.code || '' });
+    const r = await api.importPackage(target, pkg, (t) => (msg.textContent = t));
+    msg.innerHTML = `<b>Done:</b> ${r.rooms} rooms, ${r.types} room types, ${r.floors} floors, ${r.files} drawings.`;
+    toast('Import complete');
+    setTimeout(() => { m.close(); location.hash = `#/p/${target}/rooms`; route(); }, 900);
+  });
+}
+
 // ---------------- auth screens ----------------
 function viewLogin() {
   crumbs([]);
@@ -89,10 +134,11 @@ async function viewProjects() {
   const projects = await api.listProjects();
   app.innerHTML = `
     <div class="card">
-      <div class="row"><h2 class="grow">Projects</h2><button class="primary" id="newP">+ New project</button></div>
+      <div class="row"><h2 class="grow">Projects</h2><button id="impP">New from plan package</button><button class="primary" id="newP">+ New project</button></div>
       <div class="grid">${projects.map((p) => `<a class="tile" href="#/p/${p.id}"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.code || '')}</div></a>`).join('') || '<p class="muted">No projects yet.</p>'}</div>
     </div>`;
   $('#newP').onclick = () => editProject();
+  $('#impP').onclick = () => importDialog(null);
 }
 function editProject(p = {}) {
   const m = modal(`<h3>${p.id ? 'Project settings' : 'New project'}</h3>
@@ -246,7 +292,7 @@ function sheetsEditor(el, sheets, storagePrefix, onChange) {
         <div class="row"><b class="grow">${t.label} <span class="muted small">(${list.length})</span></b>
         <label class="btn small">+ Add<input type="file" accept="image/*" multiple hidden data-up="${t.key}"></label></div>
         ${list.length ? `<div class="sheet-thumbs" style="margin-top:6px">${list.map((s) => `
-          <div class="sheet-thumb"><a href="${esc(s.url)}" target="_blank"><img src="${esc(s.url)}" alt=""></a>
+          <div class="sheet-thumb"><a href="${esc(fileUrl(s.url))}" target="_blank"><img src="${esc(fileUrl(s.url))}" alt=""></a>
           <input value="${esc(s.label || '')}" placeholder="Label (e.g. A-501 King elev.)" data-lbl="${s.id}">
           <button class="link" data-del="${s.id}" style="color:var(--bad)">Remove</button></div>`).join('')}</div>` : ''}
       </div>`;
@@ -321,7 +367,7 @@ async function viewFloors(pid) {
       <div class="row"><h2 class="grow">Floor Layouts</h2><button class="primary" id="add">+ Floor</button></div>
       <p class="small muted">Upload the full floor plan for each level, then drop pins where items were placed.</p>
       <div class="grid">${floors.map((f) => `<a class="tile" href="#/p/${pid}/floor/${f.id}">
-        ${f.plan ? `<img src="${esc(f.plan.url)}" style="width:100%;height:120px;object-fit:contain;background:#fff">` : ''}
+        ${f.plan ? `<img src="${esc(fileUrl(f.plan.url))}" style="width:100%;height:120px;object-fit:contain;background:#fff">` : ''}
         <div class="t">${esc(f.name)}</div><div class="s">${rooms.filter((r) => r.floorId === f.id).length} rooms${f.plan ? '' : ' · no plan uploaded'}</div></a>`).join('') || '<p class="muted">No floors yet.</p>'}</div>
     </div>`;
   $('#add').onclick = () => floorForm(pid, { order: floors.length + 1 });
@@ -353,6 +399,8 @@ async function viewFloor(pid, fid) {
   if (!f) { sh.el.innerHTML = '<p class="pad">Floor not found.</p>'; return; }
   crumbs([[sh.p.name, `#/p/${pid}`], ['Floor Layouts', `#/p/${pid}/floors`], [f.name]]);
   let pins = await api.listPins(pid, fid);
+  const floorRooms = (await api.listRooms(pid)).filter((r) => r.floorId === fid && r.planX != null);
+  let showRooms = true;
   pins.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   let zoom = 1, adding = false;
   const hidden = new Set();
@@ -362,10 +410,11 @@ async function viewFloor(pid, fid) {
       <button id="addPin" class="primary">+ Drop pin</button>
       <button id="zo">−</button><button id="zi">+</button><button id="zf">Fit</button>
       <button id="ed">Floor settings</button>
+      ${floorRooms.length ? '<label class="inline-check"><input type="checkbox" id="sr" checked> Rooms</label>' : ''}
       <span class="grow"></span>
       <div class="legend" id="legend"></div>
     </div>
-    ${f.plan ? `<div class="plan-scroll" id="scroll"><div class="plan-stage" id="stage"><img id="plan" src="${esc(f.plan.url)}" alt=""><div id="pins"></div></div></div>` : '<p class="pad">No floor plan uploaded yet. Use <b>Floor settings</b> to add one.</p>'}
+    ${f.plan ? `<div class="plan-scroll" id="scroll"><div class="plan-stage" id="stage"><img id="plan" src="${esc(fileUrl(f.plan.url))}" alt=""><div id="rms"></div><div id="pins"></div></div></div>` : '<p class="pad">No floor plan uploaded yet. Use <b>Floor settings</b> to add one.</p>'}
     <div class="card"><h3>Pins <span class="muted small">(${pins.length})</span></h3><table class="list"><thead><tr><th>#</th><th>Item</th><th>Category</th><th class="hide-sm">Room</th><th class="hide-sm">Added</th></tr></thead><tbody id="pinList"></tbody></table></div>`;
   $('#ed').onclick = () => floorForm(pid, f);
   if (!f.plan) return;
@@ -378,6 +427,11 @@ async function viewFloor(pid, fid) {
   $('#zf').onclick = fit;
   $('#addPin').onclick = () => { adding = !adding; stage.classList.toggle('adding', adding); $('#addPin').textContent = adding ? 'Tap the plan…' : '+ Drop pin'; };
 
+  const drawRooms = () => {
+    $('#rms').innerHTML = showRooms ? floorRooms.map((r) => `<a class="room-tag" href="#/p/${pid}/room/${r.id}" style="left:${r.planX * 100}%;top:${r.planY * 100}%" title="Room ${esc(r.number)}">${esc(r.number)}</a>`).join('') : '';
+  };
+  if ($('#sr')) $('#sr').onchange = (e) => { showRooms = e.target.checked; drawRooms(); };
+  drawRooms();
   const drawPins = () => {
     $('#legend').innerHTML = PIN_CATEGORIES.filter((c) => pins.some((p) => p.category === c)).map((c) => `<label class="inline-check"><input type="checkbox" data-cat="${esc(c)}" ${hidden.has(c) ? '' : 'checked'}><i style="background:${pinColor(c)}"></i>${esc(c)}</label>`).join('');
     $$('[data-cat]').forEach((cb) => (cb.onchange = () => { cb.checked ? hidden.delete(cb.dataset.cat) : hidden.add(cb.dataset.cat); drawPins(); }));
@@ -400,7 +454,7 @@ async function viewFloor(pid, fid) {
       <div class="row"><label class="f grow"><span>Category</span><select id="pc">${PIN_CATEGORIES.map((c) => `<option ${c === p.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
       <label class="f grow"><span>Room / area (optional)</span><input id="pr" value="${esc(p.room || '')}"></label></div>
       <label class="f"><span>Notes</span><textarea id="pn">${esc(p.note || '')}</textarea></label>
-      ${p.photo ? `<a href="${esc(p.photo.url)}" target="_blank"><img src="${esc(p.photo.url)}" style="max-width:100%;max-height:220px;border-radius:8px"></a>` : ''}
+      ${p.photo ? `<a href="${esc(fileUrl(p.photo.url))}" target="_blank"><img src="${esc(fileUrl(p.photo.url))}" style="max-width:100%;max-height:220px;border-radius:8px"></a>` : ''}
       <label class="f"><span>${p.photo ? 'Replace photo' : 'Photo (optional)'}</span><input id="pp" type="file" accept="image/*" capture="environment"></label>
       ${p.id ? `<p class="small muted">Added ${p.createdAt ? new Date(p.createdAt).toLocaleString() : ''} ${esc(p.createdBy || '')}</p>` : ''}
       <div class="actions">${p.id ? '<button class="danger left" id="del">Delete</button>' : ''}<button id="x">Cancel</button><button class="primary" id="ok">Save</button></div>`);
@@ -450,8 +504,10 @@ async function viewSettings(pid) {
   const sh = await projectShell(pid, 'settings'); if (!sh) return;
   sh.el.innerHTML = `
     <div class="card"><h3>${esc(sh.p.name)}</h3><p class="muted">${esc(sh.p.code || '')}</p><button id="ed">Edit name / code</button></div>
+    <div class="card"><h3>Plan package</h3><p class="small muted">Import a plan package (room types, rooms, floor plans) prepared from the drawing set.</p><button id="imp" class="primary">Import plan package</button></div>
     <div class="card"><h3>Scan pages</h3><p class="small muted">Scan pages update automatically when you change rooms, types or floors. Use this only if something looks out of date.</p><button id="rp">Refresh all scan pages</button></div>`;
   $('#ed').onclick = () => editProject(sh.p);
+  $('#imp').onclick = () => importDialog(pid);
   $('#rp').onclick = (e) => busy(e.target, async () => { await api.republish(pid); toast('All scan pages refreshed'); });
 }
 

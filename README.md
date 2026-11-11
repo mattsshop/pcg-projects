@@ -3,7 +3,7 @@
 Perimeter Construction Group's app for running hotel projects during construction.
 Hosted on GitHub Pages, backed by Firebase (Auth + Firestore + Storage).
 
-**Current version: v0.1.0** (shown in the footer of every page)
+**Current version: v0.2.0** (shown in the footer of every page)
 
 ## Module 1 — Rooms & QR codes
 
@@ -19,10 +19,17 @@ Hosted on GitHub Pages, backed by Firebase (Auth + Firestore + Storage).
   Blocking, Millwork, Plumbing, Mechanical, Access Panel, Other) with notes and a photo.
 - **Users** – email/password or Google sign-in; new accounts wait for admin approval.
 
+## Plan packages
+
+Drawings are **not** stored in this (public) repo. Claude prepares a *plan package* (.zip with
+`manifest.json` + cropped sheet images) from the drawing set; load it from **Projects → New from plan
+package**, or a project's **Settings → Import plan package**. Re-importing an updated package updates
+floors/types by name and rooms by number, and keeps each room's QR code, hand and notes.
+
 ## Demo mode
 
 Until `js/config.js` has a real Firebase config, the app runs in demo mode with sample data
-saved only in your browser. "Sign out" in demo mode resets the demo data.
+saved only in your browser (IndexedDB, so imported plan packages fit). "Sign out" in demo mode resets the demo data.
 
 ## Firebase setup (one time)
 
@@ -58,5 +65,8 @@ scans/{token}                       public copy of one room for the QR scan page
 
 ## Versions
 
+- **0.2.0** – Plan package import (zip or folder); Bathroom tab; each room shows its own spot on the
+  floor plan first; room number tags on floor layouts (click to open the room); demo mode stores
+  drawings in IndexedDB; zip reader bundled (js/vendor/jszip.min.js, MIT).
 - **0.1.0** – First build: projects, room types, rooms, bulk add, room sheets, QR scan page,
   QR label printing, floor layouts with pins, user approval, demo mode.

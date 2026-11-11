@@ -1,12 +1,29 @@
-// Demo backend — same interface as backend-firebase.js, stored in this browser's localStorage.
-const KEY = 'pcg-projects-demo-v1';
+// Demo backend — same interface as backend-firebase.js, stored in this browser's IndexedDB
+// (room for plan images; nothing leaves this browser).
+const DB_NAME = 'pcg-projects-demo', STORE = 'kv';
 
-function load() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; }
+function openDb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
 }
-function save(store) {
-  try { localStorage.setItem(KEY, JSON.stringify(store)); }
-  catch (e) { alert('Demo storage is full (browser limit). Use smaller images, or connect Firebase.'); throw e; }
+function tx(db, mode, fn) {
+  return new Promise((res, rej) => {
+    const t = db.transaction(STORE, mode);
+    const out = fn(t.objectStore(STORE));
+    t.oncomplete = () => res(out && out.result !== undefined ? out.result : undefined);
+    t.onerror = () => rej(t.error);
+  });
+}
+async function loadAll(db) {
+  const keys = await tx(db, 'readonly', (st) => st.getAllKeys());
+  const vals = await tx(db, 'readonly', (st) => st.getAll());
+  const store = {};
+  keys.forEach((k, i) => { store[k] = vals[i]; });
+  return store;
 }
 function rid(n = 20) {
   const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -61,9 +78,20 @@ function seed() {
 }
 
 export async function createBackend() {
-  let store = load();
-  if (!store) { store = seed(); save(store); }
-  let authCb = null;
+  const db = await openDb();
+  let store = await loadAll(db);
+  let needsPublish = false;
+  if (!Object.keys(store).length) {
+    store = seed(); needsPublish = !!store.__needsPublish; delete store.__needsPublish;
+    await tx(db, 'readwrite', (st) => { for (const [k, v] of Object.entries(store)) st.put(v, k); });
+  }
+  const put = (k) => tx(db, 'readwrite', (st) => st.put(store[k], k));
+  // Uploaded files live as Blobs under "__file/<id>"; documents only hold "demofile:<id>".
+  const objUrls = {};
+  for (const k of Object.keys(store)) {
+    if (k.startsWith('__file/')) { objUrls[k.slice(7)] = URL.createObjectURL(store[k]); delete store[k]; }
+  }
+  window.__resolveUrl = (u) => (typeof u === 'string' && u.startsWith('demofile:') ? objUrls[u.slice(9)] || '' : u);
   const user = { uid: 'demo', email: 'demo@example.com', name: 'Demo User' };
 
   const be = {
@@ -77,23 +105,31 @@ export async function createBackend() {
     },
     async set(path, data, merge = true) {
       store[path] = merge ? { ...(store[path] || {}), ...structuredClone(data) } : structuredClone(data);
-      save(store);
+      await put(path);
     },
     async add(path, data) { const id = rid(); await be.set(`${path}/${id}`, data, false); return id; },
     async remove(path) {
-      Object.keys(store).forEach((k) => { if (k === path || k.startsWith(path + '/')) delete store[k]; });
-      save(store);
+      const keys = Object.keys(store).filter((k) => k === path || k.startsWith(path + '/'));
+      keys.forEach((k) => delete store[k]);
+      await tx(db, 'readwrite', (st) => keys.forEach((k) => st.delete(k)));
     },
     newId() { return rid(); },
     async upload(path, file) {
-      const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
-      return { url, path };
+      const id = rid();
+      await tx(db, 'readwrite', (st) => st.put(file, '__file/' + id));
+      objUrls[id] = URL.createObjectURL(file);
+      return { url: 'demofile:' + id, path };
     },
     async deleteFile() {},
-    onAuth(cb) { authCb = cb; setTimeout(() => cb(user), 0); return () => {}; },
+    onAuth(cb) { setTimeout(() => cb(user), 0); return () => {}; },
     async signIn() {}, async signUp() {}, async signInGoogle() {}, async resetPassword() {},
-    async signOut() { if (confirm('Demo mode: reset all demo data?')) { localStorage.removeItem(KEY); location.reload(); } },
-    takeNeedsPublish() { const n = store.__needsPublish; delete store.__needsPublish; save(store); return n; }
+    async signOut() {
+      if (!confirm('Demo mode: reset all demo data in this browser?')) return;
+      db.close();
+      await new Promise((res) => { const r = indexedDB.deleteDatabase(DB_NAME); r.onsuccess = r.onerror = r.onblocked = () => res(); });
+      location.reload();
+    },
+    takeNeedsPublish() { const n = needsPublish; needsPublish = false; return n; }
   };
   return be;
 }
