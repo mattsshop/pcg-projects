@@ -1,6 +1,6 @@
 // PCG Projects — configuration
 // Bump APP_VERSION on every change so you can tell which build is live.
-export const APP_VERSION = '0.2.1';
+export const APP_VERSION = '0.3.0';
 
 // Paste the config from Firebase console → Project settings → Your apps → Web app.
 // While apiKey still says "PASTE_...", the app runs in DEMO MODE

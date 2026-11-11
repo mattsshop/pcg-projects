@@ -217,3 +217,31 @@ export async function importPackage(pid, pkg, progress = () => {}) {
   await republish(pid);
   return { floors: m.floors.length, types: m.types.length, rooms: m.rooms.length, files: names.size };
 }
+
+// ---------- delete a whole project ----------
+// Removes rooms (and their public scan pages, so old QR labels stop working), room types,
+// floors and pins, plus every uploaded drawing/photo, then the project itself.
+export async function deleteProject(pid, progress = () => {}) {
+  const paths = new Set();
+  const addSheets = (list) => (list || []).forEach((s) => s.path && paths.add(s.path));
+  const [rooms, types, floors] = await Promise.all([listRooms(pid), listTypes(pid), listFloors(pid)]);
+  let i = 0;
+  for (const r of rooms) {
+    progress(`Deleting rooms ${++i} of ${rooms.length}…`);
+    addSheets(r.sheets);
+    if (r.token) await be.remove(`scans/${r.token}`);
+    await be.remove(`projects/${pid}/rooms/${r.id}`);
+  }
+  progress('Deleting room types…');
+  for (const t of types) { addSheets(t.sheets); await be.remove(`projects/${pid}/types/${t.id}`); }
+  progress('Deleting floors and pins…');
+  for (const f of floors) {
+    if (f.plan && f.plan.path) paths.add(f.plan.path);
+    const pins = await be.list(`projects/${pid}/floors/${f.id}/pins`);
+    for (const p of pins) { if (p.photo && p.photo.path) paths.add(p.photo.path); await be.remove(`projects/${pid}/floors/${f.id}/pins/${p.id}`); }
+    await be.remove(`projects/${pid}/floors/${f.id}`);
+  }
+  i = 0;
+  for (const path of paths) { progress(`Deleting files ${++i} of ${paths.size}…`); await be.deleteFile(path); }
+  await be.remove(`projects/${pid}`);
+}

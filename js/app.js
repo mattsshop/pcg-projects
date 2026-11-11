@@ -505,9 +505,24 @@ async function viewSettings(pid) {
   sh.el.innerHTML = `
     <div class="card"><h3>${esc(sh.p.name)}</h3><p class="muted">${esc(sh.p.code || '')}</p><button id="ed">Edit name / code</button></div>
     <div class="card"><h3>Plan package</h3><p class="small muted">Import a plan package (room types, rooms, floor plans) prepared from the drawing set.</p><button id="imp" class="primary">Import plan package</button></div>
+    ${isAdmin() ? `<div class="card" style="border-color:#f0c2bd"><h3 style="color:var(--bad)">Delete project</h3><p class="small muted">Permanently deletes this project: all rooms, room types, floor layouts, pins, photos and drawings. Every QR label for this project stops working. This can't be undone.</p><button class="danger" id="delP">Delete project</button></div>` : ''}
     <div class="card"><h3>Scan pages</h3><p class="small muted">Scan pages update automatically when you change rooms, types or floors. Use this only if something looks out of date.</p><button id="rp">Refresh all scan pages</button></div>`;
   $('#ed').onclick = () => editProject(sh.p);
   $('#imp').onclick = () => importDialog(pid);
+  if ($('#delP')) $('#delP').onclick = () => {
+    const m = modal(`<h3 style="color:var(--bad)">Delete ${esc(sh.p.name)}?</h3>
+      <p>This permanently deletes every room, room type, floor layout, pin, photo and drawing in this project, and turns off all of its QR labels.</p>
+      <label class="f"><span>Type the project name to confirm: <b>${esc(sh.p.name)}</b></span><input id="cn" autocomplete="off"></label>
+      <div id="dmsg" class="small" style="min-height:1.4em"></div>
+      <div class="actions"><button id="x">Cancel</button><button class="danger" id="ok" disabled>Delete forever</button></div>`);
+    const cn = $('#cn', m.el), ok = $('#ok', m.el);
+    cn.oninput = () => { ok.disabled = cn.value.trim() !== sh.p.name.trim(); };
+    $('#x', m.el).onclick = m.close;
+    ok.onclick = () => busy(ok, async () => {
+      await api.deleteProject(pid, (t) => ($('#dmsg', m.el).textContent = t));
+      m.close(); toast('Project deleted'); location.hash = '#/'; route();
+    });
+  };
   $('#rp').onclick = (e) => busy(e.target, async () => { await api.republish(pid); toast('All scan pages refreshed'); });
 }
 

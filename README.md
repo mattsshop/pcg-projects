@@ -3,7 +3,7 @@
 Perimeter Construction Group's app for running hotel projects during construction.
 Hosted on GitHub Pages, backed by Firebase (Auth + Firestore + Storage).
 
-**Current version: v0.2.1** (shown in the footer of every page)
+**Current version: v0.3.0** (shown in the footer of every page)
 
 ## Module 1 — Rooms & QR codes
 
@@ -64,6 +64,8 @@ scans/{token}                       public copy of one room for the QR scan page
 ```
 
 ## Versions
+
+- **0.3.0** – Admins can delete a project (Settings → Delete project, type the name to confirm). Removes rooms, scan pages (QR labels stop working), types, floors, pins and uploaded files. Updated `firestore.rules`: only admins can delete the project record.
 
 - **0.2.1** – Re-import replaces room notes that came from an earlier package; notes you typed are kept.
 

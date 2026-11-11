@@ -25,7 +25,8 @@ service cloud.firestore {
 
     // Everything about a project: approved team members only.
     match /projects/{pid} {
-      allow read, write: if approved();
+      allow read, create, update: if approved();
+      allow delete: if admin();   // only admins can delete a whole project
       match /{rest=**} {
         allow read, write: if approved();
       }
