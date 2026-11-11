@@ -3,7 +3,7 @@
 Perimeter Construction Group's app for running hotel projects during construction.
 Hosted on GitHub Pages, backed by Firebase (Auth + Firestore + Storage).
 
-**Current version: v0.2.0** (shown in the footer of every page)
+**Current version: v0.2.1** (shown in the footer of every page)
 
 ## Module 1 — Rooms & QR codes
 
@@ -64,6 +64,8 @@ scans/{token}                       public copy of one room for the QR scan page
 ```
 
 ## Versions
+
+- **0.2.1** – Re-import replaces room notes that came from an earlier package; notes you typed are kept.
 
 - **0.2.0** – Plan package import (zip or folder); Bathroom tab; each room shows its own spot on the
   floor plan first; room number tags on floor layouts (click to open the room); demo mode stores

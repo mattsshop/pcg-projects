@@ -203,7 +203,9 @@ export async function importPackage(pid, pkg, progress = () => {}) {
     const data = {
       number: String(r.number), floorId: floorId[r.floor] || '', typeId: typeId[r.type] || '',
       mirrored: ex ? !!ex.mirrored : !!r.mirrored,            // keep a hand you already set
-      notes: ex && ex.notes ? ex.notes : (r.notes || ''),     // keep notes you already wrote
+      // keep notes you typed; replace notes that came from an earlier package
+      notes: ex && ex.notes && ex.notes !== (ex.pkgNotes ?? (ex.notes.startsWith('ADA COMMUNICATING FEATURES room') ? ex.notes : null)) ? ex.notes : (r.notes || ''),
+      pkgNotes: r.notes || '',
       planX: r.planX ?? null, planY: r.planY ?? null,
       sheets: [...sheetsOf(r.sheets), ...((ex && ex.sheets) || []).filter((s) => !s.fromPackage)].map((s, k) => (k < (r.sheets || []).length ? { ...s, fromPackage: true } : s)),
       token: ex && ex.token ? ex.token : randomToken()
