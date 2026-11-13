@@ -128,3 +128,14 @@ table.list tr.click { cursor: pointer; } table.list tr.click:hover td { backgrou
   .labels { grid-template-columns: 1fr; } .label { width: 100%; }
   .hide-sm { display: none; }
 }
+
+/* label printing from a PC (IDPRT SP410 etc.): only the labels print, one per page */
+#labelPrint { display: none; }
+@media print {
+  body.label-printing > *:not(#labelPrint) { display: none !important; }
+  body.label-printing #labelPrint { display: block; }
+  body.label-printing { background: #fff; margin: 0; }
+  .lp-page { overflow: hidden; page-break-after: always; break-after: page; }
+  .lp-page:last-child { page-break-after: auto; break-after: auto; }
+  .lp-page img { display: block; image-rendering: pixelated; }
+}

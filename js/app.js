@@ -1,8 +1,8 @@
 // PCG Projects — main app (signed-in team members).
-import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.5.1';
-import * as api from './api.js?v=0.5.1';
-import { esc, renderRoom, fileUrl } from './roomview.js?v=0.5.1';
-import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToJpegFile, CAN_SHARE_PDF, CAN_SHARE_JPG, IS_IOS } from './labels.js?v=0.5.1';
+import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.6.0';
+import * as api from './api.js?v=0.6.0';
+import { esc, renderRoom, fileUrl } from './roomview.js?v=0.6.0';
+import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToJpegFile, CAN_SHARE_PDF, CAN_SHARE_JPG, IS_IOS } from './labels.js?v=0.6.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -512,15 +512,31 @@ function roomPicker(text) {
     const n = parseInt(num, 10); return n >= parseInt(a, 10) && n <= parseInt(b, 10);
   });
 }
+// Print one label per page through the browser's print dialog (desktop label printers like the IDPRT SP410).
+function printLabelsOnPC(canvases, wMm, hMm) {
+  let area = $('#labelPrint');
+  if (!area) { area = document.createElement('div'); area.id = 'labelPrint'; document.body.appendChild(area); }
+  let st = $('#labelPageStyle');
+  if (!st) { st = document.createElement('style'); st.id = 'labelPageStyle'; document.head.appendChild(st); }
+  st.textContent = `@media print { @page { size: ${wMm}mm ${hMm}mm; margin: 0; } }`;
+  area.innerHTML = canvases.map((c) => `<div class="lp-page" style="width:${wMm}mm;height:${hMm}mm"><img src="${c.toDataURL('image/png')}" style="width:${wMm}mm;height:${hMm}mm"></div>`).join('');
+  document.body.classList.add('label-printing');
+  const done = () => { document.body.classList.remove('label-printing'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  const imgs = $$('img', area);
+  Promise.all(imgs.map((i) => (i.complete ? 1 : new Promise((r) => (i.onload = i.onerror = r))))).then(() => setTimeout(() => window.print(), 150));
+}
+
 function phomemoDialog(labs, single = false) {
   const pref = prefGet('label2', { key: '50x80', w: 50, h: 80, fmt: 'pdf' });
-  const m = modal(`<h3>Label printer (Phomemo / Print Master)</h3>
+  const m = modal(`<h3>Label printer (Phomemo / IDPRT SP410)</h3>
     <label class="f"><span>Label size (match the roll in your printer)</span><select id="ls">${LABEL_SIZES.map((z) => `<option value="${z.key}" ${z.key === pref.key ? 'selected' : ''}>${esc(z.name)}</option>`).join('')}</select></label>
     <div class="row" id="custom" ${pref.key === 'custom' ? '' : 'hidden'}><label class="f grow"><span>Width (mm)</span><input id="lw" type="number" value="${pref.w}"></label><label class="f grow"><span>Height (mm)</span><input id="lh" type="number" value="${pref.h}"></label></div>
     ${single ? '' : `<label class="f"><span>Rooms (blank = all ${labs.length} shown, or e.g. 201-210, 214)</span><input id="lr" placeholder="All"></label>`}
     <label class="f"><span>Make</span><select id="lf">
       <option value="pdf" ${pref.fmt === 'pdf' ? 'selected' : ''}>Label PDF, one label per page (Print Master)</option>
-      <option value="img" ${pref.fmt === 'img' ? 'selected' : ''}>Single label pictures (tap one to share it)</option></select></label>
+      <option value="img" ${pref.fmt === 'img' ? 'selected' : ''}>Single label pictures (tap one to share it)</option>
+      <option value="pc" ${pref.fmt === 'pc' ? 'selected' : ''}>Print from this computer (IDPRT SP410 or any label printer)</option></select></label>
     <div style="text-align:center;background:#eef0f3;border-radius:8px;padding:10px"><canvas id="lp" style="max-width:100%;max-height:220px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)"></canvas><div class="small muted" id="lcount"></div></div>
     <div id="lout"></div>
     <div class="actions"><button id="x">Close</button><button class="primary" id="go">Build labels</button></div>`);
@@ -549,6 +565,14 @@ function phomemoDialog(labs, single = false) {
     prefSet('label2', { ...z, fmt });
     const canvases = list.map((l) => renderLabel(l, z.w, z.h));
     const slug = (t) => String(t).replace(/[^\w]+/g, '_');
+    if (fmt === 'pc') {
+      printLabelsOnPC(canvases, z.w, z.h);
+      out.innerHTML = `<div class="card" style="margin:12px 0 0;background:#f6fbf8"><b>${list.length} label${list.length === 1 ? '' : 's'}</b> sent to the print window, ${z.w} × ${z.h} mm.<br>
+        <span class="small">In the print window pick <b>IDPRT SP410</b>, then under <b>More settings</b>: Paper size = your label size (e.g. 4 × 6), Margins = <b>None</b>, Scale = <b>100</b> / Actual size, and turn off Headers and footers.</span>
+        <div class="row" style="margin-top:8px"><button class="primary" id="rePrint">Open print window again</button></div></div>`;
+      $('#rePrint', out).onclick = () => printLabelsOnPC(canvases, z.w, z.h);
+      return;
+    }
     if (fmt === 'pdf') {
       const blob = await canvasesToPdf(canvases, z.w, z.h);
       const name = `QR_labels_${slug(list[0].project || 'project')}_${list.length === 1 ? 'Room_' + slug(list[0].number) : list.length + '_labels'}_${z.w}x${z.h}mm.pdf`;

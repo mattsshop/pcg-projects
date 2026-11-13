@@ -10,6 +10,10 @@ export const LABEL_SIZES = [
   { key: '50x30', w: 50, h: 30, name: '50 × 30 mm' },
   { key: '40x30', w: 40, h: 30, name: '40 × 30 mm' },
   { key: '60x40', w: 60, h: 40, name: '60 × 40 mm' },
+  { key: '4x6', w: 101.6, h: 152.4, name: '4" × 6" (IDPRT SP410 shipping label)' },
+  { key: '4x4', w: 101.6, h: 101.6, name: '4" × 4"' },
+  { key: '4x3', w: 101.6, h: 76.2, name: '4" × 3"' },
+  { key: '4x2', w: 101.6, h: 50.8, name: '4" × 2"' },
   { key: 'custom', w: 50, h: 80, name: 'Custom size…' }
 ];
 const DOTS_PER_MM = 8;
