@@ -1,11 +1,11 @@
 // Data layer used by the app. Picks the demo or Firebase backend and adds project/room logic.
-import { DEMO, TABS } from './config.js?v=0.6.0';
+import { DEMO, TABS } from './config.js?v=0.6.1';
 
 let be = null;
 
 export async function initBackend(opts = {}) {
   if (be) return be;
-  const mod = DEMO ? await import('./backend-demo.js?v=0.6.0') : await import('./backend-firebase.js?v=0.6.0');
+  const mod = DEMO ? await import('./backend-demo.js?v=0.6.1') : await import('./backend-firebase.js?v=0.6.1');
   be = await mod.createBackend(opts);
   return be;
 }

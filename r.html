@@ -5,16 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Room — PCG Projects</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=0.6.1">
 </head>
 <body class="scan">
 <header class="top"><div class="brand">PCG <b>Projects</b></div><span class="ver-badge" id="verTop"></span></header>
 <main id="room" class="wrap"><p class="pad muted">Loading room…</p></main>
 <footer class="foot">Perimeter Construction Group · <span id="ver"></span> · <a id="team" href="index.html">Team sign-in</a></footer>
 <script type="module">
-import { APP_VERSION, DEMO } from './js/config.js?v=0.6.0';
-import { initBackend, getScan } from './js/api.js?v=0.6.0';
-import { renderRoom } from './js/roomview.js?v=0.6.0';
+import { APP_VERSION, DEMO } from './js/config.js?v=0.6.1';
+import { initBackend, getScan } from './js/api.js?v=0.6.1';
+import { renderRoom } from './js/roomview.js?v=0.6.1';
 
 document.getElementById('ver').textContent = 'v' + APP_VERSION + (DEMO ? ' DEMO' : '');
 document.getElementById('verTop').textContent = 'v' + APP_VERSION;

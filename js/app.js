@@ -1,8 +1,8 @@
 // PCG Projects — main app (signed-in team members).
-import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.6.0';
-import * as api from './api.js?v=0.6.0';
-import { esc, renderRoom, fileUrl } from './roomview.js?v=0.6.0';
-import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToJpegFile, CAN_SHARE_PDF, CAN_SHARE_JPG, IS_IOS } from './labels.js?v=0.6.0';
+import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.6.1';
+import * as api from './api.js?v=0.6.1';
+import { esc, renderRoom, fileUrl } from './roomview.js?v=0.6.1';
+import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToJpegFile, CAN_SHARE_PDF, CAN_SHARE_JPG, IS_IOS } from './labels.js?v=0.6.1';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -518,7 +518,17 @@ function printLabelsOnPC(canvases, wMm, hMm) {
   if (!area) { area = document.createElement('div'); area.id = 'labelPrint'; document.body.appendChild(area); }
   let st = $('#labelPageStyle');
   if (!st) { st = document.createElement('style'); st.id = 'labelPageStyle'; document.head.appendChild(st); }
-  st.textContent = `@media print { @page { size: ${wMm}mm ${hMm}mm; margin: 0; } }`;
+  // print rules live here (not only in style.css) so a cached stylesheet can't break label printing
+  st.textContent = `@media print {
+    @page { size: ${wMm}mm ${hMm}mm; margin: 0; }
+    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; min-height: 0 !important; display: block !important; }
+    body.label-printing > *:not(#labelPrint) { display: none !important; }
+    body.label-printing #labelPrint { display: block !important; }
+    .lp-page { overflow: hidden; page-break-after: always; break-after: page; margin: 0; }
+    .lp-page:last-child { page-break-after: auto; break-after: auto; }
+    .lp-page img { display: block; }
+  }
+  @media screen { #labelPrint { display: none; } }`;
   area.innerHTML = canvases.map((c) => `<div class="lp-page" style="width:${wMm}mm;height:${hMm}mm"><img src="${c.toDataURL('image/png')}" style="width:${wMm}mm;height:${hMm}mm"></div>`).join('');
   document.body.classList.add('label-printing');
   const done = () => { document.body.classList.remove('label-printing'); window.removeEventListener('afterprint', done); };

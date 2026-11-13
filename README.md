@@ -3,7 +3,7 @@
 Perimeter Construction Group's app for running hotel projects during construction.
 Hosted on GitHub Pages, backed by Firebase (Auth + Firestore + Storage).
 
-**Current version: v0.6.0** (shown in the footer of every page)
+**Current version: v0.6.1** (shown in the footer of every page)
 
 ## Module 1 — Rooms & QR codes
 
@@ -68,6 +68,8 @@ scans/{token}                       public copy of one room for the QR scan page
 ```
 
 ## Versions
+
+- **0.6.1** – Fix: PC label printing printed the whole screen when the browser had an old stylesheet cached. Print rules now ship with the print step, and `style.css` is version-stamped too.
 
 - **0.6.0** – Label printer: *Print from this computer* (IDPRT SP410 or any desktop label printer) — one label per page at the chosen size through the browser print window. Added 4"×6", 4"×4", 4"×3", 4"×2" sizes.
 
