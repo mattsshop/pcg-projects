@@ -1,5 +1,5 @@
 // Renders a room's scan page (used by r.html and the in-app preview).
-import { TABS } from './config.js?v=0.6.1';
+import { TABS } from './config.js?v=0.6.2';
 
 // Demo mode stores files locally; this turns their references into viewable URLs.
 export const fileUrl = (u) => (window.__resolveUrl ? window.__resolveUrl(u) : u);

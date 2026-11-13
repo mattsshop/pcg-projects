@@ -1,8 +1,8 @@
 // PCG Projects — main app (signed-in team members).
-import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.6.1';
-import * as api from './api.js?v=0.6.1';
-import { esc, renderRoom, fileUrl } from './roomview.js?v=0.6.1';
-import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToJpegFile, CAN_SHARE_PDF, CAN_SHARE_JPG, IS_IOS } from './labels.js?v=0.6.1';
+import { APP_VERSION, DEMO, TABS, PIN_CATEGORIES } from './config.js?v=0.6.2';
+import * as api from './api.js?v=0.6.2';
+import { esc, renderRoom, fileUrl } from './roomview.js?v=0.6.2';
+import { LABEL_SIZES, renderLabel, canvasesToPdf, canvasToJpegFile, CAN_SHARE_PDF, CAN_SHARE_JPG, IS_IOS } from './labels.js?v=0.6.2';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -513,7 +513,13 @@ function roomPicker(text) {
   });
 }
 // Print one label per page through the browser's print dialog (desktop label printers like the IDPRT SP410).
-function printLabelsOnPC(canvases, wMm, hMm) {
+function rotate90(c) {
+  const r = document.createElement('canvas'); r.width = c.height; r.height = c.width;
+  const x = r.getContext('2d'); x.translate(r.width, 0); x.rotate(Math.PI / 2); x.drawImage(c, 0, 0);
+  return r;
+}
+function printLabelsOnPC(canvases, wMm, hMm, rotate = false) {
+  if (rotate) { canvases = canvases.map(rotate90); [wMm, hMm] = [hMm, wMm]; }
   let area = $('#labelPrint');
   if (!area) { area = document.createElement('div'); area.id = 'labelPrint'; document.body.appendChild(area); }
   let st = $('#labelPageStyle');
@@ -547,6 +553,7 @@ function phomemoDialog(labs, single = false) {
       <option value="pdf" ${pref.fmt === 'pdf' ? 'selected' : ''}>Label PDF, one label per page (Print Master)</option>
       <option value="img" ${pref.fmt === 'img' ? 'selected' : ''}>Single label pictures (tap one to share it)</option>
       <option value="pc" ${pref.fmt === 'pc' ? 'selected' : ''}>Print from this computer (IDPRT SP410 or any label printer)</option></select></label>
+    <label class="inline-check" id="rotWrap" ${pref.fmt === 'pc' ? '' : 'hidden'} style="margin-bottom:10px"><input type="checkbox" id="lrot" ${pref.rot ? 'checked' : ''}> Rotate 90° — turn this on if the label prints sideways or across 2 labels</label>
     <div style="text-align:center;background:#eef0f3;border-radius:8px;padding:10px"><canvas id="lp" style="max-width:100%;max-height:220px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)"></canvas><div class="small muted" id="lcount"></div></div>
     <div id="lout"></div>
     <div class="actions"><button id="x">Close</button><button class="primary" id="go">Build labels</button></div>`);
@@ -565,22 +572,23 @@ function phomemoDialog(labs, single = false) {
     try { const c = renderLabel(list[0], z.w, z.h), pv = $('#lp', m.el); pv.width = c.width; pv.height = c.height; pv.getContext('2d').drawImage(c, 0, 0); }
     catch (e) { $('#lcount', m.el).textContent = e.message; }
   };
-  ['#ls', '#lw', '#lh', '#lr', '#lf'].forEach((sel) => { const el = $(sel, m.el); if (el) el.oninput = el.onchange = preview; });
+  ['#ls', '#lw', '#lh', '#lr', '#lf'].forEach((sel) => { const el = $(sel, m.el); if (el) el.oninput = el.onchange = () => { $('#rotWrap', m.el).hidden = $('#lf', m.el).value !== 'pc'; preview(); }; });
   preview();
   $('#x', m.el).onclick = m.close;
   const shareFile = (f) => navigator.share({ files: [f] }).catch((err) => { if (err.name !== 'AbortError') toast('Could not share: ' + err.message, 6000); });
   $('#go', m.el).onclick = (e) => busy(e.target, async () => {
     const z = size(), list = chosen(), fmt = $('#lf', m.el).value;
     if (!list.length) return alert('No rooms match.');
-    prefSet('label2', { ...z, fmt });
+    const rot = $('#lrot', m.el).checked;
+    prefSet('label2', { ...z, fmt, rot });
     const canvases = list.map((l) => renderLabel(l, z.w, z.h));
     const slug = (t) => String(t).replace(/[^\w]+/g, '_');
     if (fmt === 'pc') {
-      printLabelsOnPC(canvases, z.w, z.h);
+      printLabelsOnPC(canvases, z.w, z.h, rot);
       out.innerHTML = `<div class="card" style="margin:12px 0 0;background:#f6fbf8"><b>${list.length} label${list.length === 1 ? '' : 's'}</b> sent to the print window, ${z.w} × ${z.h} mm.<br>
-        <span class="small">In the print window pick <b>IDPRT SP410</b>, then under <b>More settings</b>: Paper size = your label size (e.g. 4 × 6), Margins = <b>None</b>, Scale = <b>100</b> / Actual size, and turn off Headers and footers.</span>
+        <span class="small">In the print window pick <b>IDPRT SP410</b>, then under <b>More settings</b>: Paper size = your label size, Margins = <b>None</b>, Scale = <b>100</b>, Headers and footers off.${rot ? '' : ' If it prints sideways or across 2 labels, tick <b>Rotate 90°</b> and build again.'}</span>
         <div class="row" style="margin-top:8px"><button class="primary" id="rePrint">Open print window again</button></div></div>`;
-      $('#rePrint', out).onclick = () => printLabelsOnPC(canvases, z.w, z.h);
+      $('#rePrint', out).onclick = () => printLabelsOnPC(canvases, z.w, z.h, $('#lrot', m.el).checked);
       return;
     }
     if (fmt === 'pdf') {
